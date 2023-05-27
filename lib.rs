@@ -11,6 +11,7 @@ mod escrow {
     pub enum EscrowError {
         ListingCanOnlyBeCreatedByAVendor,
         ListingLimitReached,
+        ListingNotFound,
         VendorAlreadyExists,
     }
 
@@ -152,6 +153,19 @@ mod escrow {
         }
 
         #[ink(message)]
+        pub fn deposit_into_listing(&mut self, id: u32) -> Result<(), EscrowError> {
+            let listing_wrapped: Option<Listing> = self.listings.values.get(id);
+            let listing: Listing;
+            if listing_wrapped.is_none() {
+                return Err(EscrowError::ListingNotFound);
+            } else {
+                listing = listing_wrapped.unwrap();
+            }
+
+            Ok(())
+        }
+
+        #[ink(message)]
         pub fn create_vendor(&mut self) -> Result<(), EscrowError> {
             let caller: AccountId = Self::env().caller();
             if self.vendors.get(caller).is_some() {
@@ -246,6 +260,20 @@ mod escrow {
             // * it raises an error
             result = escrow.create_vendor();
             assert_eq!(result, Err(EscrowError::VendorAlreadyExists));
+        }
+
+        #[ink::test]
+        fn test_deposit_into_listing() {
+            let (accounts, mut escrow) = init();
+
+            // when listing does not exist
+            // * it raises an error
+            let result = escrow.deposit_into_listing(0);
+            assert_eq!(result, Err(EscrowError::ListingNotFound));
+
+            // when listing exists
+            // = when listing does not belong to caller
+            // = when listing belongs to caller
         }
     }
 }
