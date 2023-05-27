@@ -1,18 +1,18 @@
 #![cfg_attr(not(feature = "std"), no_std)]
 
 #[ink::contract]
-mod az_escrow {
+mod escrow {
 
     /// Defines the storage of your contract.
     /// Add new fields to the below struct in order
     /// to add new static storage fields to your contract.
     #[ink(storage)]
-    pub struct AzEscrow {
+    pub struct Escrow {
         /// Stores a single `bool` value on the storage.
         value: bool,
     }
 
-    impl AzEscrow {
+    impl Escrow {
         /// Constructor that initializes the `bool` value to the given `init_value`.
         #[ink(constructor)]
         pub fn new(init_value: bool) -> Self {
@@ -53,17 +53,17 @@ mod az_escrow {
         /// We test if the default constructor does its job.
         #[ink::test]
         fn default_works() {
-            let az_escrow = AzEscrow::default();
-            assert_eq!(az_escrow.get(), false);
+            let escrow = Escrow::default();
+            assert_eq!(escrow.get(), false);
         }
 
         /// We test a simple use case of our contract.
         #[ink::test]
         fn it_works() {
-            let mut az_escrow = AzEscrow::new(false);
-            assert_eq!(az_escrow.get(), false);
-            az_escrow.flip();
-            assert_eq!(az_escrow.get(), true);
+            let mut escrow = Escrow::new(false);
+            assert_eq!(escrow.get(), false);
+            escrow.flip();
+            assert_eq!(escrow.get(), true);
         }
     }
 }
