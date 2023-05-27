@@ -64,10 +64,7 @@ mod escrow {
             let starting_index: u32;
             let ending_index: u32;
             // When the listings to skip is greater than max possible
-            if listings_to_skip.is_none() {
-                return listings;
-            } else {
-                let listings_to_skip_unwrapped: u32 = listings_to_skip.unwrap();
+            if let Some(listings_to_skip_unwrapped) = listings_to_skip {
                 let ending_index_wrapped: Option<u32> =
                     self.length.checked_sub(listings_to_skip_unwrapped);
                 // When listings to skip is greater than total number of listings
@@ -75,7 +72,9 @@ mod escrow {
                     return listings;
                 }
                 ending_index = ending_index_wrapped.unwrap();
-                starting_index = ending_index.checked_sub(size.into()).unwrap_or(0);
+                starting_index = ending_index.saturating_sub(size.into());
+            } else {
+                return listings;
             }
             for i in (starting_index..=ending_index).rev() {
                 listings.push(self.values.get(i).unwrap())
@@ -155,7 +154,7 @@ mod escrow {
         #[ink(message)]
         pub fn create_vendor(&mut self) -> Result<(), EscrowError> {
             let caller: AccountId = Self::env().caller();
-            if self.vendors.get(&caller).is_some() {
+            if self.vendors.get(caller).is_some() {
                 return Err(EscrowError::VendorAlreadyExists);
             }
 
