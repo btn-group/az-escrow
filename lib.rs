@@ -9,6 +9,7 @@ mod escrow {
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum EscrowError {
+        AmountUnavailable,
         InsufficientFunds,
         ListingCanOnlyBeCreatedByAVendor,
         ListingLimitReached,
@@ -21,6 +22,15 @@ mod escrow {
     #[ink(event)]
     pub struct CreateListing {
         id: u32,
+        #[ink(topic)]
+        vendor: AccountId,
+    }
+
+    #[ink(event)]
+    pub struct CreateOrder {
+        id: u64,
+        #[ink(topic)]
+        buyer: AccountId,
         #[ink(topic)]
         vendor: AccountId,
     }
@@ -103,6 +113,66 @@ mod escrow {
         derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
     )]
     #[derive(Debug, Clone)]
+    pub struct Order {
+        id: u64,
+        buyer: AccountId,
+        vendor: AccountId,
+        amount: Balance,
+    }
+
+    #[derive(Debug, Default)]
+    #[ink::storage_item]
+    pub struct Orders {
+        values: Mapping<u64, Order>,
+        length: u64,
+    }
+    impl Orders {
+        pub fn index(&self, page: u64, size: u8) -> Vec<Order> {
+            let mut orders: Vec<Order> = vec![];
+            // When there's no orders
+            if self.length == 0 {
+                return orders;
+            }
+
+            let orders_to_skip: Option<u64> = page.checked_mul(size.into());
+            let starting_index: u64;
+            let ending_index: u64;
+            // When the orders to skip is greater than max possible
+            if let Some(orders_to_skip_unwrapped) = orders_to_skip {
+                let ending_index_wrapped: Option<u64> =
+                    self.length.checked_sub(orders_to_skip_unwrapped);
+                // When orders to skip is greater than total number of orders
+                if ending_index_wrapped.is_none() {
+                    return orders;
+                }
+                ending_index = ending_index_wrapped.unwrap();
+                starting_index = ending_index.saturating_sub(size.into());
+            } else {
+                return orders;
+            }
+            for i in (starting_index..=ending_index).rev() {
+                orders.push(self.values.get(i).unwrap())
+            }
+            orders
+        }
+
+        pub fn create(&mut self, value: &Order) {
+            if self.values.insert(self.length, value).is_none() {
+                self.length += 1
+            }
+        }
+
+        pub fn update(&mut self, value: &Order) {
+            self.values.insert(value.id, value);
+        }
+    }
+
+    #[derive(scale::Decode, scale::Encode)]
+    #[cfg_attr(
+        feature = "std",
+        derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
+    )]
+    #[derive(Debug, Clone)]
     pub struct Vendor {}
 
     // === CONTRACT ===
@@ -112,6 +182,7 @@ mod escrow {
         #[storage_field]
         ownable: ownable::Data,
         listings: Listings,
+        orders: Orders,
         vendors: Mapping<AccountId, Vendor>,
     }
     impl Escrow {
@@ -120,6 +191,10 @@ mod escrow {
             let mut instance = Self::default();
             instance._init_with_owner(Self::env().caller());
             instance.listings = Listings {
+                values: Mapping::default(),
+                length: 0,
+            };
+            instance.orders = Orders {
                 values: Mapping::default(),
                 length: 0,
             };
@@ -156,6 +231,46 @@ mod escrow {
                 id: listing.id,
                 vendor: listing.vendor,
             });
+
+            Ok(())
+        }
+
+        #[ink(message)]
+        pub fn create_order(
+            &mut self,
+            listing_id: u32,
+            amount: Balance,
+        ) -> Result<(), EscrowError> {
+            let listing_wrapped: Option<Listing> = self.listings.values.get(listing_id);
+            if let Some(mut listing) = listing_wrapped {
+                let caller: AccountId = Self::env().caller();
+                if listing.vendor == caller {
+                    return Err(EscrowError::Unauthorized);
+                }
+                if amount > listing.available_amount {
+                    return Err(EscrowError::AmountUnavailable);
+                }
+
+                listing.available_amount -= amount;
+                self.listings.update(&listing);
+
+                let order: Order = Order {
+                    id: self.orders.length,
+                    buyer: caller,
+                    vendor: listing.vendor,
+                    amount,
+                };
+                self.orders.create(&order);
+
+                // Emit event
+                self.env().emit_event(CreateOrder {
+                    id: order.id,
+                    buyer: order.buyer,
+                    vendor: order.vendor,
+                });
+            } else {
+                return Err(EscrowError::ListingNotFound);
+            }
 
             Ok(())
         }
@@ -296,6 +411,45 @@ mod escrow {
             );
             // = * it increases the listings length by one
             assert_eq!(escrow.listings.length, u32::MAX);
+        }
+
+        #[ink::test]
+        fn test_create_order() {
+            let (accounts, mut escrow) = init();
+            let _ = escrow.create_vendor();
+            let _ = escrow.create_listing();
+
+            // when listing does not exist
+            // * it raises an error
+            let mut result = escrow.create_order(1, 5);
+            assert_eq!(result, Err(EscrowError::ListingNotFound));
+            // when listing exists
+            // = when caller is vendor
+            // = * it raises an error
+            result = escrow.create_order(0, 5);
+            assert_eq!(result, Err(EscrowError::Unauthorized));
+            // = when caller is not vendor
+            test_utils::change_caller(accounts.alice);
+            // == when amount to purchase is not available
+            // == * it raises an error
+            result = escrow.create_order(0, 5);
+            assert_eq!(result, Err(EscrowError::AmountUnavailable));
+            // == when amount to purchase is available
+            test_utils::change_caller(accounts.bob);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(5);
+            let _ = escrow.deposit_into_listing(0);
+            test_utils::change_caller(accounts.alice);
+            result = escrow.create_order(0, 5);
+            assert!(result.is_ok());
+            // == * it reduces the amount_availabe by the amount
+            assert_eq!(escrow.listings.values.get(0).unwrap().available_amount, 0);
+            // == * it create an order
+            let order: Order = escrow.orders.values.get(0).unwrap();
+            assert_eq!(order.amount, 5);
+            assert_eq!(order.buyer, accounts.alice);
+            assert_eq!(order.vendor, accounts.bob);
+            assert_eq!(order.id, 0);
+            assert_eq!(escrow.orders.length, 1);
         }
 
         #[ink::test]
