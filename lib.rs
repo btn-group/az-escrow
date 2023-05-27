@@ -9,6 +9,8 @@ mod escrow {
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum EscrowError {
+        ListingCanOnlyBeCreatedByAVendor,
+        ListingLimitReached,
         VendorAlreadyExists,
     }
 
@@ -119,20 +121,19 @@ mod escrow {
 
         #[ink(message)]
         pub fn create_listing(&mut self) -> Result<(), EscrowError> {
+            if self.listings.length == u32::MAX {
+                return Err(EscrowError::ListingLimitReached);
+            }
+            let caller: AccountId = Self::env().caller();
+            if self.vendors.get(caller).is_none() {
+                return Err(EscrowError::ListingCanOnlyBeCreatedByAVendor);
+            }
 
-            // let caller: AccountId = Self::env().caller();
-            // if self.vendors.get(&caller).is_some() {
-            //     return Err(EscrowError::VendorAlreadyExists);
-            // }
-
-            // // Create vendor for caller
-            // let vendor: Vendor = Vendor {};
-            // self.vendors.insert(caller, &vendor);
-
+            self.listings.set(&Listing { vendor: caller });
             // // Emit event
             // self.env().emit_event(CreateVendor { caller });
 
-            // Ok(())
+            Ok(())
         }
 
         #[ink(message)]
@@ -157,14 +158,21 @@ mod escrow {
     #[cfg(test)]
     mod tests {
         use super::*;
+        use ink::env::{test::DefaultAccounts, DefaultEnvironment};
         use openbrush::test_utils;
+
+        // === HELPERS ===
+        fn init() -> (DefaultAccounts<DefaultEnvironment>, Escrow) {
+            let accounts = test_utils::accounts();
+            test_utils::change_caller(accounts.bob);
+            let escrow = Escrow::new();
+            (accounts, escrow)
+        }
 
         // === TESTS ===
         #[ink::test]
         fn test_new() {
-            let accounts = test_utils::accounts();
-            test_utils::change_caller(accounts.bob);
-            let escrow = Escrow::new();
+            let (accounts, escrow) = init();
             // * it sets owner as caller
             assert_eq!(escrow.ownable.owner(), accounts.bob);
             // * it sets listings
@@ -176,25 +184,48 @@ mod escrow {
 
         #[ink::test]
         fn test_config() {
-            let accounts = test_utils::accounts();
-            test_utils::change_caller(accounts.alice);
-            let escrow = Escrow::new();
+            let (accounts, escrow) = init();
             let config = escrow.config();
             // * it returns the config
-            assert_eq!(config.admin, accounts.alice);
+            assert_eq!(config.admin, accounts.bob);
+        }
+
+        #[ink::test]
+        fn test_create_listing() {
+            let (accounts, mut escrow) = init();
+            // when the maximum number of listings has been reached
+            escrow.listings.length = u32::MAX;
+            // * it raises an error
+            let mut result = escrow.create_listing();
+            assert_eq!(result, Err(EscrowError::ListingLimitReached));
+            // when the maximum number of listings hasn't been reached
+            escrow.listings.length = u32::MAX - 1;
+            // = when caller isn't a vendor
+            // = * it raises an error
+            result = escrow.create_listing();
+            assert_eq!(result, Err(EscrowError::ListingCanOnlyBeCreatedByAVendor));
+            // = when caller is a vendor
+            escrow.vendors.insert(accounts.bob, &Vendor {});
+            // = * it creates a listing at the listings length index
+            result = escrow.create_listing();
+            assert!(result.is_ok());
+            assert_eq!(
+                escrow.listings.values.get(u32::MAX - 1).unwrap().vendor,
+                accounts.bob
+            );
+            // = * it increases the listings length by one
+            assert_eq!(escrow.listings.length, u32::MAX);
         }
 
         #[ink::test]
         fn test_create_vendor() {
-            let accounts = test_utils::accounts();
-            test_utils::change_caller(accounts.alice);
-            let mut escrow = Escrow::new();
+            let (accounts, mut escrow) = init();
             // when account is not a vendor
             // * it creates a vendor profile for account
             // * it emits a CreateVendor event (TO DO AFTER HACKATHON)
             let mut result = escrow.create_vendor();
             assert!(result.is_ok());
-            assert!(escrow.vendors.get(&accounts.alice).is_some());
+            assert!(escrow.vendors.get(&accounts.bob).is_some());
 
             // when account is already a vendor
             // * it raises an error
