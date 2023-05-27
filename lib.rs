@@ -13,6 +13,7 @@ mod escrow {
         ListingLimitReached,
         ListingNotFound,
         VendorAlreadyExists,
+        Unauthorized,
     }
 
     // === EVENTS ===
@@ -45,6 +46,7 @@ mod escrow {
     pub struct Listing {
         id: u32,
         vendor: AccountId,
+        available_amount: Balance,
     }
 
     #[derive(Debug, Default)]
@@ -83,10 +85,14 @@ mod escrow {
             listings
         }
 
-        pub fn set(&mut self, value: &Listing) {
+        pub fn create(&mut self, value: &Listing) {
             if self.values.insert(self.length, value).is_none() {
                 self.length += 1
             }
+        }
+
+        pub fn update(&mut self, value: &Listing) {
+            self.values.insert(value.id, value);
         }
     }
 
@@ -140,8 +146,9 @@ mod escrow {
             let listing: Listing = Listing {
                 id: self.listings.length,
                 vendor: caller,
+                available_amount: 0,
             };
-            self.listings.set(&listing);
+            self.listings.create(&listing);
 
             // Emit event
             self.env().emit_event(CreateListing {
@@ -152,14 +159,18 @@ mod escrow {
             Ok(())
         }
 
-        #[ink(message)]
+        #[ink(message, payable)]
         pub fn deposit_into_listing(&mut self, id: u32) -> Result<(), EscrowError> {
             let listing_wrapped: Option<Listing> = self.listings.values.get(id);
-            let listing: Listing;
-            if listing_wrapped.is_none() {
-                return Err(EscrowError::ListingNotFound);
+            if let Some(mut listing) = listing_wrapped {
+                if listing.vendor != Self::env().caller() {
+                    return Err(EscrowError::Unauthorized);
+                }
+
+                listing.available_amount += self.env().transferred_value();
+                self.listings.update(&listing);
             } else {
-                listing = listing_wrapped.unwrap();
+                return Err(EscrowError::ListingNotFound);
             }
 
             Ok(())
@@ -196,6 +207,10 @@ mod escrow {
             test_utils::change_caller(accounts.bob);
             let escrow = Escrow::new();
             (accounts, escrow)
+        }
+
+        fn set_balance(account_id: AccountId, balance: Balance) {
+            ink::env::test::set_account_balance::<ink::env::DefaultEnvironment>(account_id, balance)
         }
 
         // === TESTS ===
@@ -268,12 +283,25 @@ mod escrow {
 
             // when listing does not exist
             // * it raises an error
-            let result = escrow.deposit_into_listing(0);
+            let mut result = escrow.deposit_into_listing(0);
             assert_eq!(result, Err(EscrowError::ListingNotFound));
 
             // when listing exists
+            let _ = escrow.create_vendor();
+            let _ = escrow.create_listing();
             // = when listing does not belong to caller
+            test_utils::change_caller(accounts.alice);
+            // = * it raises an error
+            result = escrow.deposit_into_listing(0);
+            assert_eq!(result, Err(EscrowError::Unauthorized));
             // = when listing belongs to caller
+            test_utils::change_caller(accounts.bob);
+            set_balance(accounts.bob, 10);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(1);
+            // = * it increases the listing available_amount
+            result = escrow.deposit_into_listing(0);
+            assert!(result.is_ok());
+            assert_eq!(escrow.listings.values.get(0).unwrap().available_amount, 1);
         }
     }
 }
