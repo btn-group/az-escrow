@@ -9,6 +9,7 @@ mod escrow {
     #[derive(Debug, PartialEq, Eq, scale::Encode, scale::Decode)]
     #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
     pub enum EscrowError {
+        InsufficientFunds,
         ListingCanOnlyBeCreatedByAVendor,
         ListingLimitReached,
         ListingNotFound,
@@ -159,6 +160,23 @@ mod escrow {
             Ok(())
         }
 
+        #[ink(message)]
+        pub fn create_vendor(&mut self) -> Result<(), EscrowError> {
+            let caller: AccountId = Self::env().caller();
+            if self.vendors.get(caller).is_some() {
+                return Err(EscrowError::VendorAlreadyExists);
+            }
+
+            // Create vendor for caller
+            let vendor: Vendor = Vendor {};
+            self.vendors.insert(caller, &vendor);
+
+            // Emit event
+            self.env().emit_event(CreateVendor { caller });
+
+            Ok(())
+        }
+
         #[ink(message, payable)]
         pub fn deposit_into_listing(&mut self, id: u32) -> Result<(), EscrowError> {
             let listing_wrapped: Option<Listing> = self.listings.values.get(id);
@@ -177,18 +195,32 @@ mod escrow {
         }
 
         #[ink(message)]
-        pub fn create_vendor(&mut self) -> Result<(), EscrowError> {
-            let caller: AccountId = Self::env().caller();
-            if self.vendors.get(caller).is_some() {
-                return Err(EscrowError::VendorAlreadyExists);
+        pub fn withdraw_from_listing(
+            &mut self,
+            id: u32,
+            amount: Balance,
+        ) -> Result<(), EscrowError> {
+            let listing_wrapped: Option<Listing> = self.listings.values.get(id);
+            if let Some(mut listing) = listing_wrapped {
+                if listing.vendor != Self::env().caller() {
+                    return Err(EscrowError::Unauthorized);
+                }
+                if amount > listing.available_amount {
+                    return Err(EscrowError::InsufficientFunds);
+                };
+
+                listing.available_amount -= amount;
+                self.listings.update(&listing);
+                if self.env().transfer(listing.vendor, amount).is_err() {
+                    panic!(
+                        "requested transfer failed. this can be the case if the contract does not\
+                         have sufficient free funds or if the transfer would have brought the\
+                         contract's balance below minimum balance."
+                    )
+                }
+            } else {
+                return Err(EscrowError::ListingNotFound);
             }
-
-            // Create vendor for caller
-            let vendor: Vendor = Vendor {};
-            self.vendors.insert(caller, &vendor);
-
-            // Emit event
-            self.env().emit_event(CreateVendor { caller });
 
             Ok(())
         }
@@ -207,6 +239,11 @@ mod escrow {
             test_utils::change_caller(accounts.bob);
             let escrow = Escrow::new();
             (accounts, escrow)
+        }
+
+        fn get_balance(account_id: AccountId) -> Balance {
+            ink::env::test::get_account_balance::<ink::env::DefaultEnvironment>(account_id)
+                .expect("Cannot get account balance")
         }
 
         fn set_balance(account_id: AccountId, balance: Balance) {
@@ -302,6 +339,41 @@ mod escrow {
             result = escrow.deposit_into_listing(0);
             assert!(result.is_ok());
             assert_eq!(escrow.listings.values.get(0).unwrap().available_amount, 1);
+        }
+
+        #[ink::test]
+        fn test_withdraw_from_listing() {
+            let (accounts, mut escrow) = init();
+
+            // when listing does not exist
+            // * it raises an error
+            let mut result = escrow.deposit_into_listing(0);
+            assert_eq!(result, Err(EscrowError::ListingNotFound));
+
+            // when listing exists
+            let _ = escrow.create_vendor();
+            let _ = escrow.create_listing();
+            // = when listing does not belong to caller
+            test_utils::change_caller(accounts.alice);
+            // = * it raises an error
+            result = escrow.deposit_into_listing(0);
+            assert_eq!(result, Err(EscrowError::Unauthorized));
+            // = when listing belongs to caller
+            test_utils::change_caller(accounts.bob);
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(5);
+            set_balance(accounts.bob, 10);
+            let _ = escrow.deposit_into_listing(0);
+            // == when amount is less than or equal to the the available_amount
+            // == * it sends the amount to the vendor
+            result = escrow.withdraw_from_listing(0, 1);
+            assert!(result.is_ok());
+            assert_eq!(get_balance(accounts.bob), 11);
+            // == * it reduces the available amount
+            assert_eq!(escrow.listings.values.get(0).unwrap().available_amount, 4);
+            // == when amount is greater than the available_amount
+            // == * it raises an error
+            result = escrow.withdraw_from_listing(0, 5);
+            assert_eq!(result, Err(EscrowError::InsufficientFunds));
         }
     }
 }
