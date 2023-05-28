@@ -107,6 +107,12 @@ mod escrow {
         }
     }
 
+    // Order statuses
+    // 0 => Open
+    // 1 => PendingPayment
+    // 2 => Finalised
+    // 3 => Cancelled
+    // 4 => Disputed
     #[derive(scale::Decode, scale::Encode)]
     #[cfg_attr(
         feature = "std",
@@ -118,6 +124,7 @@ mod escrow {
         buyer: AccountId,
         vendor: AccountId,
         amount: Balance,
+        status: u8,
     }
 
     #[derive(Debug, Default)]
@@ -259,6 +266,7 @@ mod escrow {
                     buyer: caller,
                     vendor: listing.vendor,
                     amount,
+                    status: 0,
                 };
                 self.orders.create(&order);
 
@@ -450,6 +458,7 @@ mod escrow {
             assert_eq!(order.vendor, accounts.bob);
             assert_eq!(order.id, 0);
             assert_eq!(escrow.orders.length, 1);
+            assert_eq!(order.status, 0);
         }
 
         #[ink::test]
