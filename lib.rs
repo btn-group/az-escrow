@@ -152,6 +152,7 @@ mod escrow {
         payment_verification: Option<String>,
         status: u8,
         listing_id: u32,
+        total_price: Balance,
     }
 
     #[derive(Debug, Default)]
@@ -348,6 +349,7 @@ mod escrow {
                     payment_verification: None,
                     status: 0,
                     listing_id: listing.id,
+                    total_price: listing.price_per_tzero * amount,
                 };
                 self.orders.create(&order);
 
