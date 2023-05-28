@@ -57,6 +57,13 @@ mod escrow {
         admin: AccountId,
     }
 
+    #[derive(Debug, Clone, scale::Encode, scale::Decode)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub struct ListingsForFrontEnd {
+        listings: Vec<Listing>,
+        length: u32,
+    }
+
     #[derive(scale::Decode, scale::Encode)]
     #[cfg_attr(
         feature = "std",
@@ -219,6 +226,7 @@ mod escrow {
             instance
         }
 
+        // === QUERIES ===
         #[ink(message)]
         pub fn config(&self) -> Config {
             Config {
@@ -226,6 +234,15 @@ mod escrow {
             }
         }
 
+        #[ink(message)]
+        pub fn listing(&mut self, page: u32, size: u8) -> ListingsForFrontEnd {
+            ListingsForFrontEnd {
+                listings: self.listings.index(page, size),
+                length: self.listings.length,
+            }
+        }
+
+        // === TXS ===
         #[ink(message)]
         pub fn create_listing(&mut self) -> Result<(), EscrowError> {
             if self.listings.length == u32::MAX {
