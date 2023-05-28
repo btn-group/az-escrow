@@ -14,6 +14,7 @@ mod escrow {
         ListingCanOnlyBeCreatedByAVendor,
         ListingLimitReached,
         ListingNotFound,
+        NotPendingVerification,
         OrderCancelled,
         OrderFinalised,
         OrderNotFound,
@@ -355,6 +356,32 @@ mod escrow {
                 self.listings.update(&listing);
             } else {
                 return Err(EscrowError::ListingNotFound);
+            }
+
+            Ok(())
+        }
+
+        #[ink(message)]
+        pub fn finalise_order(&mut self, order_id: u64) -> Result<(), EscrowError> {
+            let order_wrapped: Option<Order> = self.orders.values.get(order_id);
+            if let Some(mut order) = order_wrapped {
+                let caller: AccountId = Self::env().caller();
+                if order.vendor != caller || caller != self.ownable.owner() {
+                    return Err(EscrowError::Unauthorised);
+                } else if order.status != 1 {
+                    return Err(EscrowError::NotPendingVerification);
+                }
+
+                order.status = 2;
+                self.orders.update(&order);
+
+                // Emit event
+                self.env().emit_event(UpdateOrder {
+                    id: order.id,
+                    status: order.status,
+                });
+            } else {
+                return Err(EscrowError::OrderNotFound);
             }
 
             Ok(())
