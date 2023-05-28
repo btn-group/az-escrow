@@ -206,7 +206,9 @@ mod escrow {
         derive(scale_info::TypeInfo, ink::storage::traits::StorageLayout)
     )]
     #[derive(Debug, Clone)]
-    pub struct Vendor {}
+    pub struct Vendor {
+        ethereum_address: String,
+    }
 
     // === CONTRACT ===
     #[ink(storage)]
@@ -361,14 +363,14 @@ mod escrow {
         }
 
         #[ink(message)]
-        pub fn create_vendor(&mut self) -> Result<(), EscrowError> {
+        pub fn create_vendor(&mut self, ethereum_address: String) -> Result<(), EscrowError> {
             let caller: AccountId = Self::env().caller();
             if self.vendors.get(caller).is_some() {
                 return Err(EscrowError::VendorAlreadyExists);
             }
 
             // Create vendor for caller
-            let vendor: Vendor = Vendor {};
+            let vendor: Vendor = Vendor { ethereum_address };
             self.vendors.insert(caller, &vendor);
 
             // Emit event
@@ -579,7 +581,12 @@ mod escrow {
             result = escrow.create_listing();
             assert_eq!(result, Err(EscrowError::ListingCanOnlyBeCreatedByAVendor));
             // = when caller is a vendor
-            escrow.vendors.insert(accounts.bob, &Vendor {});
+            escrow.vendors.insert(
+                accounts.bob,
+                &Vendor {
+                    ethereum_address: "0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string(),
+                },
+            );
             // = * it creates a listing at the listings length index
             result = escrow.create_listing();
             assert!(result.is_ok());
@@ -594,7 +601,7 @@ mod escrow {
         #[ink::test]
         fn test_create_order() {
             let (accounts, mut escrow) = init();
-            let _ = escrow.create_vendor();
+            let _ = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
             let _ = escrow.create_listing();
 
             // when listing does not exist
@@ -637,13 +644,14 @@ mod escrow {
             // when account is not a vendor
             // * it creates a vendor profile for account
             // * it emits a CreateVendor event (TO DO AFTER HACKATHON)
-            let mut result = escrow.create_vendor();
+            let mut result =
+                escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
             assert!(result.is_ok());
             assert!(escrow.vendors.get(&accounts.bob).is_some());
 
             // when account is already a vendor
             // * it raises an error
-            result = escrow.create_vendor();
+            result = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
             assert_eq!(result, Err(EscrowError::VendorAlreadyExists));
         }
 
@@ -657,7 +665,7 @@ mod escrow {
             assert_eq!(result, Err(EscrowError::ListingNotFound));
 
             // when listing exists
-            let _ = escrow.create_vendor();
+            let _ = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
             let _ = escrow.create_listing();
             // = when listing does not belong to caller
             test_utils::change_caller(accounts.alice);
@@ -685,7 +693,7 @@ mod escrow {
                 escrow.update_order_payment_verification(0, payment_verification.clone());
             assert_eq!(result, Err(EscrowError::OrderNotFound));
             // when order exists
-            let _ = escrow.create_vendor();
+            let _ = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
             let _ = escrow.create_listing();
             ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(10);
             let _ = escrow.deposit_into_listing(0);
@@ -752,7 +760,7 @@ mod escrow {
             assert_eq!(result, Err(EscrowError::ListingNotFound));
 
             // when listing exists
-            let _ = escrow.create_vendor();
+            let _ = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
             let _ = escrow.create_listing();
             // = when listing does not belong to caller
             test_utils::change_caller(accounts.alice);
