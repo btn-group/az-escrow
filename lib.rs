@@ -14,24 +14,26 @@ mod escrow {
         ListingCanOnlyBeCreatedByAVendor,
         ListingLimitReached,
         ListingNotFound,
+        OrderCancelled,
+        OrderFinalised,
+        OrderNotFound,
         VendorAlreadyExists,
-        Unauthorized,
+        Unauthorised,
     }
 
     // === EVENTS ===
     #[ink(event)]
     pub struct CreateListing {
-        id: u32,
         #[ink(topic)]
+        id: u32,
         vendor: AccountId,
     }
 
     #[ink(event)]
     pub struct CreateOrder {
+        #[ink(topic)]
         id: u64,
-        #[ink(topic)]
         buyer: AccountId,
-        #[ink(topic)]
         vendor: AccountId,
     }
 
@@ -39,6 +41,13 @@ mod escrow {
     pub struct CreateVendor {
         #[ink(topic)]
         caller: AccountId,
+    }
+
+    #[ink(event)]
+    pub struct UpdateOrder {
+        #[ink(topic)]
+        id: u64,
+        status: u8,
     }
 
     // === STRUCTS ===
@@ -109,7 +118,7 @@ mod escrow {
 
     // Order statuses
     // 0 => Open
-    // 1 => PendingPayment
+    // 1 => PendingVerification
     // 2 => Finalised
     // 3 => Cancelled
     // 4 => Disputed
@@ -124,6 +133,7 @@ mod escrow {
         buyer: AccountId,
         vendor: AccountId,
         amount: Balance,
+        payment_verification: Option<String>,
         status: u8,
     }
 
@@ -252,7 +262,7 @@ mod escrow {
             if let Some(mut listing) = listing_wrapped {
                 let caller: AccountId = Self::env().caller();
                 if listing.vendor == caller {
-                    return Err(EscrowError::Unauthorized);
+                    return Err(EscrowError::Unauthorised);
                 }
                 if amount > listing.available_amount {
                     return Err(EscrowError::AmountUnavailable);
@@ -266,6 +276,7 @@ mod escrow {
                     buyer: caller,
                     vendor: listing.vendor,
                     amount,
+                    payment_verification: None,
                     status: 0,
                 };
                 self.orders.create(&order);
@@ -305,13 +316,45 @@ mod escrow {
             let listing_wrapped: Option<Listing> = self.listings.values.get(id);
             if let Some(mut listing) = listing_wrapped {
                 if listing.vendor != Self::env().caller() {
-                    return Err(EscrowError::Unauthorized);
+                    return Err(EscrowError::Unauthorised);
                 }
 
                 listing.available_amount += self.env().transferred_value();
                 self.listings.update(&listing);
             } else {
                 return Err(EscrowError::ListingNotFound);
+            }
+
+            Ok(())
+        }
+
+        #[ink(message)]
+        pub fn update_order_payment_verification(
+            &mut self,
+            order_id: u64,
+            payment_verification: String,
+        ) -> Result<(), EscrowError> {
+            let order_wrapped: Option<Order> = self.orders.values.get(order_id);
+            if let Some(mut order) = order_wrapped {
+                let caller: AccountId = Self::env().caller();
+                if order.buyer != caller {
+                    return Err(EscrowError::Unauthorised);
+                } else if order.status == 2 {
+                    return Err(EscrowError::OrderFinalised);
+                } else if order.status == 3 {
+                    return Err(EscrowError::OrderCancelled);
+                }
+                order.payment_verification = Some(payment_verification);
+                order.status = 1;
+                self.orders.update(&order);
+
+                // Emit event
+                self.env().emit_event(UpdateOrder {
+                    id: order.id,
+                    status: order.status,
+                });
+            } else {
+                return Err(EscrowError::OrderNotFound);
             }
 
             Ok(())
@@ -326,7 +369,7 @@ mod escrow {
             let listing_wrapped: Option<Listing> = self.listings.values.get(id);
             if let Some(mut listing) = listing_wrapped {
                 if listing.vendor != Self::env().caller() {
-                    return Err(EscrowError::Unauthorized);
+                    return Err(EscrowError::Unauthorised);
                 }
                 if amount > listing.available_amount {
                     return Err(EscrowError::InsufficientFunds);
@@ -435,7 +478,7 @@ mod escrow {
             // = when caller is vendor
             // = * it raises an error
             result = escrow.create_order(0, 5);
-            assert_eq!(result, Err(EscrowError::Unauthorized));
+            assert_eq!(result, Err(EscrowError::Unauthorised));
             // = when caller is not vendor
             test_utils::change_caller(accounts.alice);
             // == when amount to purchase is not available
@@ -493,7 +536,7 @@ mod escrow {
             test_utils::change_caller(accounts.alice);
             // = * it raises an error
             result = escrow.deposit_into_listing(0);
-            assert_eq!(result, Err(EscrowError::Unauthorized));
+            assert_eq!(result, Err(EscrowError::Unauthorised));
             // = when listing belongs to caller
             test_utils::change_caller(accounts.bob);
             set_balance(accounts.bob, 10);
@@ -502,6 +545,74 @@ mod escrow {
             result = escrow.deposit_into_listing(0);
             assert!(result.is_ok());
             assert_eq!(escrow.listings.values.get(0).unwrap().available_amount, 1);
+        }
+
+        #[ink::test]
+        fn test_update_order_payment_verification() {
+            let (accounts, mut escrow) = init();
+            let payment_verification: String = "tx-hash-that-proves-payment".to_string();
+
+            // when order does not exist
+            // * it raises an error
+            let mut result =
+                escrow.update_order_payment_verification(0, payment_verification.clone());
+            assert_eq!(result, Err(EscrowError::OrderNotFound));
+            // when order exists
+            let _ = escrow.create_vendor();
+            let _ = escrow.create_listing();
+            ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(10);
+            let _ = escrow.deposit_into_listing(0);
+            test_utils::change_caller(accounts.alice);
+            let _ = escrow.create_order(0, 5);
+            // = when called by non-buyer
+            // = * it raises an error
+            test_utils::change_caller(accounts.bob);
+            result = escrow.update_order_payment_verification(0, payment_verification.clone());
+            assert_eq!(result, Err(EscrowError::Unauthorised));
+            // = when called by buyer
+            test_utils::change_caller(accounts.alice);
+            let mut order: Order = escrow.orders.values.get(0).unwrap();
+            // == when order has status finalised
+            order.status = 2;
+            escrow.orders.update(&order);
+            // == * it raises an error
+            result = escrow.update_order_payment_verification(0, payment_verification.clone());
+            assert_eq!(result, Err(EscrowError::OrderFinalised));
+            // == when order has status cancelled
+            order.status = 3;
+            escrow.orders.update(&order);
+            // == * it raises an error
+            result = escrow.update_order_payment_verification(0, payment_verification.clone());
+            assert_eq!(result, Err(EscrowError::OrderCancelled));
+            // == when order has status open
+            order.status = 0;
+            escrow.orders.update(&order);
+            let _ = escrow.update_order_payment_verification(0, payment_verification.clone());
+            order = escrow.orders.values.get(0).unwrap();
+            // == * it updates the order's tx hash
+            assert_eq!(
+                order.payment_verification,
+                Some(payment_verification.clone())
+            );
+            // == * it updates the status to PendingVerification
+            assert_eq!(order.status, 1);
+            // == when order has status PendingVerification
+            // == * it updates the order's tx hash
+            let payment_verification_two: String = "Hey Joni".to_string();
+            let _ = escrow.update_order_payment_verification(0, payment_verification_two.clone());
+            order = escrow.orders.values.get(0).unwrap();
+            // == * it updates the order's tx hash
+            assert_eq!(order.payment_verification, Some(payment_verification_two));
+            assert_eq!(order.status, 1);
+            // == when order has status Disputed
+            order.status = 4;
+            escrow.orders.update(&order);
+            let _ = escrow.update_order_payment_verification(0, payment_verification.clone());
+            order = escrow.orders.values.get(0).unwrap();
+            // == * it updates the order's tx hash
+            assert_eq!(order.payment_verification, Some(payment_verification));
+            // == * it updates the order's tx hash
+            assert_eq!(order.status, 1);
         }
 
         #[ink::test]
@@ -520,7 +631,7 @@ mod escrow {
             test_utils::change_caller(accounts.alice);
             // = * it raises an error
             result = escrow.deposit_into_listing(0);
-            assert_eq!(result, Err(EscrowError::Unauthorized));
+            assert_eq!(result, Err(EscrowError::Unauthorised));
             // = when listing belongs to caller
             test_utils::change_caller(accounts.bob);
             ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(5);
