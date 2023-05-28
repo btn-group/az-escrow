@@ -150,6 +150,7 @@ mod escrow {
         amount: Balance,
         payment_verification: Option<String>,
         status: u8,
+        listing_id: u32,
     }
 
     #[derive(Debug, Default)]
@@ -260,6 +261,37 @@ mod escrow {
 
         // === TXS ===
         #[ink(message)]
+        pub fn cancel_order(&mut self, order_id: u64) -> Result<(), EscrowError> {
+            let order_wrapped: Option<Order> = self.orders.values.get(order_id);
+            if let Some(mut order) = order_wrapped {
+                let caller: AccountId = Self::env().caller();
+                if order.buyer != caller || caller != self.ownable.owner() {
+                    return Err(EscrowError::Unauthorised);
+                } else if order.status == 2 || order.status == 3 {
+                    return Err(EscrowError::StatusCanNotBeChanged);
+                }
+
+                order.status = 3;
+                self.orders.update(&order);
+
+                // Increase associated listing's availabe_amount
+                let mut listing: Listing = self.listings.values.get(order.listing_id).unwrap();
+                listing.available_amount += order.amount;
+                self.listings.update(&listing);
+
+                // Emit event
+                self.env().emit_event(UpdateOrder {
+                    id: order.id,
+                    status: order.status,
+                });
+            } else {
+                return Err(EscrowError::OrderNotFound);
+            }
+
+            Ok(())
+        }
+
+        #[ink(message)]
         pub fn create_listing(&mut self) -> Result<(), EscrowError> {
             if self.listings.length == u32::MAX {
                 return Err(EscrowError::ListingLimitReached);
@@ -311,6 +343,7 @@ mod escrow {
                     amount,
                     payment_verification: None,
                     status: 0,
+                    listing_id: listing.id,
                 };
                 self.orders.create(&order);
 
