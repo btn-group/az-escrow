@@ -5,7 +5,10 @@
     <img src="images/logo.png" alt="Logo" height="80">
   </a>
 
-  <h3 align="center">Escrow</h3>
+  <h3 align="center">Escrow Smart Contract for Aleph Zero</h3>
+  <p align="center">
+    <a href="https://btn-group-hackathon.herokuapp.com/" target="_blank">Try it out</a>
+  </p>
 </div>
 
 <!-- TABLE OF CONTENTS -->
@@ -85,15 +88,14 @@ Note that blocks are only created when you execute a function in substrate-contr
 
 ## References
 
-1. https://realtakahashi-work.medium.com/substrate-ink-how-to-define-own-struct-%E7%8B%AC%E8%87%AA%E6%A7%8B%E9%80%A0%E4%BD%93%E3%81%AE%E5%AE%A3%E8%A8%80%E6%96%B9%E6%B3%95-8f4893089ba4
-2. https://github.com/paritytech/ink-examples/blob/main/contract-transfer/lib.rs
-3. https://github.com/paritytech/ink
-4. https://learn.brushfam.io/docs/OpenBrush/smart-contracts/ownable
-5. https://github.com/Brushfam/openbrush-contracts/blob/main/lang/src/test_utils.rs#L39
-6. https://github.com/Brushfam/openbrush-contracts/blob/main/contracts/src/access/ownable/mod.rs
-7. https://github.com/Supercolony-net/openbrush-contracts/blob/96b556536a9806cb2a0db7a6159a412754ceba9b/contracts/src/traits/errors/psp22.rs#L100
-8. https://paritytech.github.io/ink/ink_env/test/index.html
-9. https://use.ink/basics/contract-testing/
-10. https://use.ink/examples/smart-contracts
-11. https://use.ink/getting-started/building-your-contract
-12. https://substrate.stackexchange.com/questions/1174/why-is-it-a-bad-idea-to-use-string-in-an-ink-smart-contract
+- https://github.com/paritytech/ink-examples/blob/main/contract-transfer/lib.rs
+- https://github.com/paritytech/ink
+- https://learn.brushfam.io/docs/OpenBrush/smart-contracts/ownable
+- https://github.com/Brushfam/openbrush-contracts/blob/main/lang/src/test_utils.rs#L39
+- https://github.com/Brushfam/openbrush-contracts/blob/main/contracts/src/access/ownable/mod.rs
+- https://github.com/Supercolony-net/openbrush-contracts/blob/96b556536a9806cb2a0db7a6159a412754ceba9b/contracts/src/traits/errors/psp22.rs#L100
+- https://paritytech.github.io/ink/ink_env/test/index.html
+- https://use.ink/basics/contract-testing/
+- https://use.ink/examples/smart-contracts
+- https://use.ink/getting-started/building-your-contract
+- https://substrate.stackexchange.com/questions/1174/why-is-it-a-bad-idea-to-use-string-in-an-ink-smart-contract
