@@ -94,7 +94,11 @@ mod escrow {
                 return listings;
             }
 
-            let listings_to_skip: Option<u32> = page.checked_mul(size.into());
+            let listings_to_skip: Option<u32> = if page == 0 {
+                Some(0)
+            } else {
+                page.checked_mul(size.into())
+            };
             let starting_index: u32;
             let ending_index: u32;
             // When the listings to skip is greater than max possible
@@ -171,7 +175,12 @@ mod escrow {
                 return orders;
             }
 
-            let orders_to_skip: Option<u64> = page.checked_mul(size.into());
+            let orders_to_skip: Option<u64> = if page == 0 {
+                Some(0)
+            } else {
+                page.checked_mul(size.into())
+            };
+
             let starting_index: u64;
             let ending_index: u64;
             // When the orders to skip is greater than max possible
