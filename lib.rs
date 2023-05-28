@@ -83,7 +83,7 @@ mod escrow {
         length: u32,
     }
     impl Listings {
-        pub fn index(&self, page: u32, size: u8) -> Vec<Listing> {
+        pub fn index(&self, page: u32, size: u16) -> Vec<Listing> {
             let mut listings: Vec<Listing> = vec![];
             // When there's no listings
             if self.length == 0 {
@@ -123,6 +123,13 @@ mod escrow {
         }
     }
 
+    #[derive(Debug, Clone, scale::Encode, scale::Decode)]
+    #[cfg_attr(feature = "std", derive(scale_info::TypeInfo))]
+    pub struct OrdersForFrontEnd {
+        orders: Vec<Order>,
+        length: u64,
+    }
+
     // Order statuses
     // 0 => Open
     // 1 => PendingVerification
@@ -151,7 +158,7 @@ mod escrow {
         length: u64,
     }
     impl Orders {
-        pub fn index(&self, page: u64, size: u8) -> Vec<Order> {
+        pub fn index(&self, page: u64, size: u16) -> Vec<Order> {
             let mut orders: Vec<Order> = vec![];
             // When there's no orders
             if self.length == 0 {
@@ -235,10 +242,18 @@ mod escrow {
         }
 
         #[ink(message)]
-        pub fn listing(&mut self, page: u32, size: u8) -> ListingsForFrontEnd {
+        pub fn listing(&mut self, page: u32, size: u16) -> ListingsForFrontEnd {
             ListingsForFrontEnd {
                 listings: self.listings.index(page, size),
                 length: self.listings.length,
+            }
+        }
+
+        #[ink(message)]
+        pub fn orders(&mut self, page: u64, size: u16) -> OrdersForFrontEnd {
+            OrdersForFrontEnd {
+                orders: self.orders.index(page, size),
+                length: self.orders.length,
             }
         }
 
