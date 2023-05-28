@@ -75,6 +75,7 @@ mod escrow {
         id: u32,
         vendor: AccountId,
         available_amount: Balance,
+        price_per_tzero: Balance,
     }
 
     #[derive(Debug, Default)]
@@ -294,7 +295,7 @@ mod escrow {
         }
 
         #[ink(message)]
-        pub fn create_listing(&mut self) -> Result<(), EscrowError> {
+        pub fn create_listing(&mut self, price_per_tzero: Balance) -> Result<(), EscrowError> {
             if self.listings.length == u32::MAX {
                 return Err(EscrowError::ListingLimitReached);
             }
@@ -307,6 +308,7 @@ mod escrow {
                 id: self.listings.length,
                 vendor: caller,
                 available_amount: 0,
+                price_per_tzero,
             };
             self.listings.create(&listing);
 
@@ -568,17 +570,18 @@ mod escrow {
 
         #[ink::test]
         fn test_create_listing() {
+            let price_per_tzero: Balance = 1_000_000;
             let (accounts, mut escrow) = init();
             // when the maximum number of listings has been reached
             escrow.listings.length = u32::MAX;
             // * it raises an error
-            let mut result = escrow.create_listing();
+            let mut result = escrow.create_listing(price_per_tzero);
             assert_eq!(result, Err(EscrowError::ListingLimitReached));
             // when the maximum number of listings hasn't been reached
             escrow.listings.length = u32::MAX - 1;
             // = when caller isn't a vendor
             // = * it raises an error
-            result = escrow.create_listing();
+            result = escrow.create_listing(price_per_tzero);
             assert_eq!(result, Err(EscrowError::ListingCanOnlyBeCreatedByAVendor));
             // = when caller is a vendor
             escrow.vendors.insert(
@@ -588,7 +591,7 @@ mod escrow {
                 },
             );
             // = * it creates a listing at the listings length index
-            result = escrow.create_listing();
+            result = escrow.create_listing(price_per_tzero);
             assert!(result.is_ok());
             assert_eq!(
                 escrow.listings.values.get(u32::MAX - 1).unwrap().vendor,
@@ -600,9 +603,10 @@ mod escrow {
 
         #[ink::test]
         fn test_create_order() {
+            let price_per_tzero: Balance = 1_000_000;
             let (accounts, mut escrow) = init();
             let _ = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
-            let _ = escrow.create_listing();
+            let _ = escrow.create_listing(price_per_tzero);
 
             // when listing does not exist
             // * it raises an error
@@ -657,6 +661,7 @@ mod escrow {
 
         #[ink::test]
         fn test_deposit_into_listing() {
+            let price_per_tzero: Balance = 1_000_000;
             let (accounts, mut escrow) = init();
 
             // when listing does not exist
@@ -666,7 +671,7 @@ mod escrow {
 
             // when listing exists
             let _ = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
-            let _ = escrow.create_listing();
+            let _ = escrow.create_listing(price_per_tzero);
             // = when listing does not belong to caller
             test_utils::change_caller(accounts.alice);
             // = * it raises an error
@@ -684,6 +689,7 @@ mod escrow {
 
         #[ink::test]
         fn test_update_order_payment_verification() {
+            let price_per_tzero: Balance = 1_000_000;
             let (accounts, mut escrow) = init();
             let payment_verification: String = "tx-hash-that-proves-payment".to_string();
 
@@ -694,7 +700,7 @@ mod escrow {
             assert_eq!(result, Err(EscrowError::OrderNotFound));
             // when order exists
             let _ = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
-            let _ = escrow.create_listing();
+            let _ = escrow.create_listing(price_per_tzero);
             ink::env::test::set_value_transferred::<ink::env::DefaultEnvironment>(10);
             let _ = escrow.deposit_into_listing(0);
             test_utils::change_caller(accounts.alice);
@@ -752,6 +758,7 @@ mod escrow {
 
         #[ink::test]
         fn test_withdraw_from_listing() {
+            let price_per_tzero: Balance = 1_000_000;
             let (accounts, mut escrow) = init();
 
             // when listing does not exist
@@ -761,7 +768,7 @@ mod escrow {
 
             // when listing exists
             let _ = escrow.create_vendor("0xcBfb370dd23CacF0DD1b56d942480DE752A7D2AA".to_string());
-            let _ = escrow.create_listing();
+            let _ = escrow.create_listing(price_per_tzero);
             // = when listing does not belong to caller
             test_utils::change_caller(accounts.alice);
             // = * it raises an error
