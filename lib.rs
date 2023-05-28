@@ -133,7 +133,7 @@ mod escrow {
         buyer: AccountId,
         vendor: AccountId,
         amount: Balance,
-        payment_proof: Option<String>,
+        payment_verification: Option<String>,
         status: u8,
     }
 
@@ -276,7 +276,7 @@ mod escrow {
                     buyer: caller,
                     vendor: listing.vendor,
                     amount,
-                    payment_proof: None,
+                    payment_verification: None,
                     status: 0,
                 };
                 self.orders.create(&order);
@@ -329,10 +329,10 @@ mod escrow {
         }
 
         #[ink(message)]
-        pub fn update_order_payment_proof(
+        pub fn update_order_payment_verification(
             &mut self,
             order_id: u64,
-            payment_proof: String,
+            payment_verification: String,
         ) -> Result<(), EscrowError> {
             let order_wrapped: Option<Order> = self.orders.values.get(order_id);
             if let Some(mut order) = order_wrapped {
@@ -344,7 +344,7 @@ mod escrow {
                 } else if order.status == 3 {
                     return Err(EscrowError::OrderCancelled);
                 }
-                order.payment_proof = Some(payment_proof);
+                order.payment_verification = Some(payment_verification);
                 order.status = 1;
                 self.orders.update(&order);
 
@@ -548,13 +548,14 @@ mod escrow {
         }
 
         #[ink::test]
-        fn test_update_order_payment_proof() {
+        fn test_update_order_payment_verification() {
             let (accounts, mut escrow) = init();
-            let payment_proof: String = "tx-hash-that-proves-payment".to_string();
+            let payment_verification: String = "tx-hash-that-proves-payment".to_string();
 
             // when order does not exist
             // * it raises an error
-            let mut result = escrow.update_order_payment_proof(0, payment_proof.clone());
+            let mut result =
+                escrow.update_order_payment_verification(0, payment_verification.clone());
             assert_eq!(result, Err(EscrowError::OrderNotFound));
             // when order exists
             let _ = escrow.create_vendor();
@@ -566,7 +567,7 @@ mod escrow {
             // = when called by non-buyer
             // = * it raises an error
             test_utils::change_caller(accounts.bob);
-            result = escrow.update_order_payment_proof(0, payment_proof.clone());
+            result = escrow.update_order_payment_verification(0, payment_verification.clone());
             assert_eq!(result, Err(EscrowError::Unauthorised));
             // = when called by buyer
             test_utils::change_caller(accounts.alice);
@@ -575,38 +576,41 @@ mod escrow {
             order.status = 2;
             escrow.orders.update(&order);
             // == * it raises an error
-            result = escrow.update_order_payment_proof(0, payment_proof.clone());
+            result = escrow.update_order_payment_verification(0, payment_verification.clone());
             assert_eq!(result, Err(EscrowError::OrderFinalised));
             // == when order has status cancelled
             order.status = 3;
             escrow.orders.update(&order);
             // == * it raises an error
-            result = escrow.update_order_payment_proof(0, payment_proof.clone());
+            result = escrow.update_order_payment_verification(0, payment_verification.clone());
             assert_eq!(result, Err(EscrowError::OrderCancelled));
             // == when order has status open
             order.status = 0;
             escrow.orders.update(&order);
-            let _ = escrow.update_order_payment_proof(0, payment_proof.clone());
+            let _ = escrow.update_order_payment_verification(0, payment_verification.clone());
             order = escrow.orders.values.get(0).unwrap();
             // == * it updates the order's tx hash
-            assert_eq!(order.payment_proof, Some(payment_proof.clone()));
+            assert_eq!(
+                order.payment_verification,
+                Some(payment_verification.clone())
+            );
             // == * it updates the status to PendingVerification
             assert_eq!(order.status, 1);
             // == when order has status PendingVerification
             // == * it updates the order's tx hash
-            let payment_proof_two: String = "Hey Joni".to_string();
-            let _ = escrow.update_order_payment_proof(0, payment_proof_two.clone());
+            let payment_verification_two: String = "Hey Joni".to_string();
+            let _ = escrow.update_order_payment_verification(0, payment_verification_two.clone());
             order = escrow.orders.values.get(0).unwrap();
             // == * it updates the order's tx hash
-            assert_eq!(order.payment_proof, Some(payment_proof_two));
+            assert_eq!(order.payment_verification, Some(payment_verification_two));
             assert_eq!(order.status, 1);
             // == when order has status Disputed
             order.status = 4;
             escrow.orders.update(&order);
-            let _ = escrow.update_order_payment_proof(0, payment_proof.clone());
+            let _ = escrow.update_order_payment_verification(0, payment_verification.clone());
             order = escrow.orders.values.get(0).unwrap();
             // == * it updates the order's tx hash
-            assert_eq!(order.payment_proof, Some(payment_proof));
+            assert_eq!(order.payment_verification, Some(payment_verification));
             // == * it updates the order's tx hash
             assert_eq!(order.status, 1);
         }
