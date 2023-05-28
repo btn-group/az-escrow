@@ -2,7 +2,9 @@
 
 #[ink::contract]
 mod escrow {
+    use ink::prelude::{vec, vec::Vec};
     use ink::storage::Mapping;
+    use ink_prelude::string::String;
     use openbrush::{contracts::ownable::*, traits::Storage};
 
     // === ENUMS ===
