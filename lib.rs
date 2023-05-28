@@ -259,7 +259,7 @@ mod escrow {
         }
 
         #[ink(message)]
-        pub fn listing(&mut self, page: u32, size: u16) -> ListingsForFrontEnd {
+        pub fn listings(&mut self, page: u32, size: u16) -> ListingsForFrontEnd {
             ListingsForFrontEnd {
                 listings: self.listings.index(page, size),
                 length: self.listings.length,
@@ -442,7 +442,7 @@ mod escrow {
             let order_wrapped: Option<Order> = self.orders.values.get(order_id);
             if let Some(mut order) = order_wrapped {
                 let caller: AccountId = Self::env().caller();
-                if order.vendor != caller || caller != self.ownable.owner() {
+                if order.vendor != caller && caller != self.ownable.owner() {
                     return Err(EscrowError::Unauthorised);
                 } else if order.status == 2 || order.status == 3 {
                     return Err(EscrowError::StatusCanNotBeChanged);
